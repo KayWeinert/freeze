@@ -1,22 +1,17 @@
-local trap = nil
-local mode = nil
-local scope = "public" -- Set scope of the chat message (public or private)
+local trap
+local mode -- "a" attach, "d" detach
+local scope = "private" -- Set scope of the chat message (public or private)
 
 minetest.register_entity("freeze:fe", {
     physical = true,
-    collisionbox = {-0.1,-0.1,-0.1, 0.1,0.3,0.1},
+    collisionbox = { -0.01, -0.01, -0.01, 0.01, 0.01, 0.01 },
     visual = "sprite",
-    visual_size = {x=0.1, y=0.3},
-    mesh = "model",
-    textures = {"freeze_t.png"},
-    spritediv = {x=1, y=1.5},
-    initial_sprite_basepos = {x=0, y=0},
+    visual_size = { x = 0, y = 0 },
+    textures = { "freeze_t.png" },
     is_visible = true,
     makes_footstep_sound = false,
-    automatic_rotate = false,
-
     on_activate = function(self, staticdata)
-        self.object:set_armor_groups({immortal = 1})
+        self.object:set_armor_groups({ immortal = 1 })
 
         if not trap or not mode or self.trapped then
             return
@@ -29,45 +24,40 @@ minetest.register_entity("freeze:fe", {
         end
 
         if mode == "a" then
-            playerobj:set_attach(self.object, "", {x=0,y=0,z=0}, {x=0,y=0,z=0})
-		
-		if scope == "public" then
-            	  minetest.chat_send_all("*** "..trap.." can't move anymore.")
-		else            
-		  minetest.chat_send_player(trap,"You cannot move anymore.")
-		end
+            playerobj:set_attach(self.object, "", { x = 0, y = 0, z = 0 }, { x = 0, y = 0, z = 0 })
 
-	    self.trapped = trap
+            if scope == "public" then
+                minetest.chat_send_all("*** " .. trap .. " can't move anymore.")
+            else
+                minetest.chat_send_player(trap, "You cannot move anymore.")
+            end
+
+            self.trapped = trap
 
             trap = nil
             mode = nil
         end
     end,
 
-    on_step = function(self,dtime)
-        if not trap or not mode then
-            return
-        end
-
-        if mode == "d" and trap == self.trapped then
-            local pobj = minetest.get_player_by_name(trap)
+    on_step = function(self)
+        if mode and mode == "d" then
+            local pname = self.trapped
+            local pobj = minetest.get_player_by_name(self.trapped)
 
             if not pobj then
                 return
             end
 
             pobj:set_detach()
-            
-	    if scope == "public" then
-                  minetest.chat_send_all("*** "..trap.." can move again.")
-            else
-                  minetest.chat_send_player(trap,"You can move now again.")
-            end
-
+            self.object:remove()
             trap = nil
             mode = nil
 
-            self.object:remove()
+            if scope == "public" then
+                minetest.chat_send_all("*** " .. pname .. " can move again.")
+            else
+                minetest.chat_send_player(pname, "You can move now again.")
+            end
         end
     end,
 })
@@ -81,7 +71,7 @@ minetest.register_on_joinplayer(function(player)
         mode = "a"
         local pos = player:get_pos()
 
-        minetest.after(0.3,function()
+        minetest.after(0.3, function()
             minetest.add_entity(pos, "freeze:fe")
         end)
     end
@@ -99,35 +89,74 @@ end)
 minetest.register_chatcommand("freeze", {
     params = "<player>",
     description = "Freeze movement of a player",
-    privs = {kick = true},
+    privs = { kick = true },
     func = function(name, param)
         local player = minetest.get_player_by_name(param)
 
         if not player then
-            return true,"Player not online."
+            return true, "Player not online."
+        end
+
+        local frozen = player:get_attribute("freeze:istrapped")
+
+        if frozen then
+            return true, "Player is already frozen."
         end
 
         trap = param
         mode = "a"
-        player:set_attribute("freeze:istrapped","true")
+        player:set_attribute("freeze:istrapped", "true")
         local pos = player:get_pos()
         minetest.add_entity(pos, "freeze:fe")
     end,
 })
 
+minetest.register_chatcommand("freezeAll", {
+    description = "Freeze movement of all players",
+    privs = { kick = true },
+    func = function()
+        for _, player in ipairs(minetest.get_connected_players()) do
+            minetest.chat_send_all("freezing everyone")
+            trap = player:get_player_name()
+            mode = "a"
+            player:set_attribute("freeze:istrapped", "true")
+            local pos = player:get_pos()
+            minetest.add_entity(pos, "freeze:fe")
+        end
+    end,
+})
+
+minetest.register_chatcommand("unfreezeAll", {
+    description = "Unfreeze movement of a player",
+    privs = { kick = true },
+    func = function()
+        for _, player in ipairs(minetest.get_connected_players()) do
+            minetest.chat_send_all("unfreezing everyone")
+
+            if not player then
+                return true, "Player not online."
+            end
+
+            mode = "d"
+            player:set_attribute("freeze:istrapped", nil)
+            player:set_detach()
+        end
+    end,
+})
+
 minetest.register_chatcommand("unfreeze", {
     params = "<player>",
-        description = "Unfreeze movement of a player",
-        privs = {kick = true},
-        func = function(name, param)
+    description = "Unfreeze movement of a player",
+    privs = { kick = true },
+    func = function(name, param)
 
         local player = minetest.get_player_by_name(param)
 
         if not player then
-        return true,"Player not online."
+            return true, "Player not online."
         end
 
-        player:set_attribute("freeze:istrapped",nil)
+        player:set_attribute("freeze:istrapped", nil)
 
         trap = param
         mode = "d"
